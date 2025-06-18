@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Microsoft.Web.Administration;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Management;
@@ -51,7 +52,55 @@ namespace deploytool.core
                 {
 
                 }
+                try
+                {
+                    //安装MIME类型数组
+                    using (ServerManager serverManager = new ServerManager())
+                    {
+                        Configuration config = serverManager.GetApplicationHostConfiguration();
+                        ConfigurationSection staticContentSection = config.GetSection("system.webServer/staticContent");
+                        ConfigurationElementCollection mimeMapCollection = staticContentSection.GetCollection();
 
+                        // 定义要添加的MIME类型数组
+                        string[][] mimeTypesToAdd = new string[][]
+                        {
+                        new string[] { ".atlas", "application/octet-stream" },
+                        new string[] { ".gltf", "model/gltf-binary" },
+                        new string[] { ".webp", "image/webp" }
+                        };
+
+                        foreach (string[] mimeTypeInfo in mimeTypesToAdd)
+                        {
+                            string fileExtension = mimeTypeInfo[0];
+                            string mimeType = mimeTypeInfo[1];
+
+                            // 检查MIME类型是否已存在
+                            if (!MimeTypeExists(mimeMapCollection, fileExtension))
+                            {
+                                ConfigurationElement newMimeMapElement = mimeMapCollection.CreateElement("mimeMap");
+                                newMimeMapElement["fileExtension"] = fileExtension;
+                                newMimeMapElement["mimeType"] = mimeType;
+                                mimeMapCollection.Add(newMimeMapElement);
+                                Console.WriteLine($"已添加MIME类型: {fileExtension} -> {mimeType}");
+                            }
+                            else
+                            {
+                                Console.WriteLine($"MIME类型已存在: {fileExtension} -> {mimeType}");
+                            }
+                        }
+
+                        serverManager.CommitChanges();
+                        Console.WriteLine("所有更改已提交到applicationHost.config");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"操作过程中发生错误: {ex.Message}");
+                    if (ex.InnerException != null)
+                    {
+                        Console.WriteLine($"内部错误: {ex.InnerException.Message}");
+                    }
+                }
                 IsExecuted = true;
                 return true;
             }
@@ -60,6 +109,19 @@ namespace deploytool.core
                 progressCallback(this, $"错误: {ex.Message}");
                 return false;
             }
+        }
+
+        // 检查指定的文件扩展名是否已存在于MIME映射中
+        private static bool MimeTypeExists(ConfigurationElementCollection collection, string fileExtension)
+        {
+            foreach (ConfigurationElement element in collection)
+            {
+                if (element["fileExtension"].ToString().Equals(fileExtension, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         public override Task Rollback(Action<DeploymentStep, string> progressCallback)
